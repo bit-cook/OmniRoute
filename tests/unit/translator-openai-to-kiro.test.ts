@@ -1046,26 +1046,41 @@ test("buildKiroPayload accepts kr/* model ids without the [1m] suffix", () => {
   );
 });
 
-// Regression for upstream decolua/9router PR #2270: the dash->dot normalization's
-// trailing minor-version group must be bounded (1-2 digits), otherwise a
-// date-suffixed Claude model id (e.g. claude-opus-4-20250514) gets corrupted into
-// "claude-opus-4.20250514" because the unbounded `-(\d+)$` group swallows the
-// 8-digit date as if it were a minor version.
-test("buildKiroPayload normalizes short dash-suffixed minor versions to dots", () => {
+// Reversal of the #5825 dash->dot normalization (upstream decolua/9router PR
+// #2270 originally bounded the trailing minor-version group to 1-2 digits to
+// avoid corrupting date-suffixed ids like claude-opus-4-20250514). Live
+// traffic against the real Kiro/CodeWhisperer backend showed the whole
+// premise was backwards: Kiro requires DASH notation and rejects dot
+// notation with HTTP 400 INVALID_MODEL_ID (upstream issue #2308, fixed by
+// PR #2315). Claude Code already sends dashes, so buildKiroPayload must now
+// pass the model id through unchanged — these tests were flipped from
+// asserting a dot-converted id to asserting the dash form is preserved.
+test("buildKiroPayload preserves dash-suffixed minor versions (no dot conversion)", () => {
   const body = { messages: [{ role: "user", content: "Hello" }] };
 
   const opus = buildKiroPayload("claude-opus-4-8", body, false, null);
   assert.equal(
     opus.conversationState.currentMessage.userInputMessage.modelId,
-    "claude-opus-4.8",
-    "1-digit minor version should normalize dash to dot"
+    "claude-opus-4-8",
+    "dash-suffixed minor version must be dispatched to Kiro unchanged (dash, not dot)"
   );
 
   const sonnet = buildKiroPayload("claude-sonnet-4-6", body, false, null);
   assert.equal(
     sonnet.conversationState.currentMessage.userInputMessage.modelId,
-    "claude-sonnet-4.6",
-    "1-digit minor version should normalize dash to dot (sonnet)"
+    "claude-sonnet-4-6",
+    "dash-suffixed minor version must be dispatched to Kiro unchanged (dash, sonnet)"
+  );
+});
+
+test("buildKiroPayload preserves claude-sonnet-4-5 in dash form (fixes INVALID_MODEL_ID, #2308)", () => {
+  const body = { messages: [{ role: "user", content: "Hello" }] };
+
+  const result = buildKiroPayload("claude-sonnet-4-5", body, false, null);
+  assert.equal(
+    result.conversationState.currentMessage.userInputMessage.modelId,
+    "claude-sonnet-4-5",
+    "claude-sonnet-4-5 must be dispatched in dash form — Kiro rejects the dot form with INVALID_MODEL_ID"
   );
 });
 
@@ -1076,7 +1091,7 @@ test("buildKiroPayload does not corrupt date-suffixed Claude model ids (#2270)",
   assert.equal(
     result.conversationState.currentMessage.userInputMessage.modelId,
     "claude-opus-4-20250514",
-    "date-suffixed model ids (3+ digit trailing group) must NOT be dash->dot normalized"
+    "date-suffixed model ids must never be mutated — with no transform applied at all, corruption is structurally impossible"
   );
 });
 
@@ -1088,5 +1103,33 @@ test("buildKiroPayload leaves already-two-dash Claude ids unchanged (#2270)", ()
     result.conversationState.currentMessage.userInputMessage.modelId,
     "claude-opus-4-1-20250805",
     "two-dash form (patch + date) must remain unchanged"
+  );
+});
+
+test("buildKiroPayload leaves the model id idempotent across repeated calls", () => {
+  const body = { messages: [{ role: "user", content: "Hello" }] };
+
+  const first = buildKiroPayload("claude-sonnet-4-5", body, false, null);
+  const second = buildKiroPayload(
+    first.conversationState.currentMessage.userInputMessage.modelId,
+    body,
+    false,
+    null
+  );
+  assert.equal(
+    second.conversationState.currentMessage.userInputMessage.modelId,
+    "claude-sonnet-4-5",
+    "passing the already-processed model id through again must be a no-op"
+  );
+});
+
+test("buildKiroPayload leaves non-Claude model ids untouched (deepseek)", () => {
+  const body = { messages: [{ role: "user", content: "Hello" }] };
+
+  const result = buildKiroPayload("deepseek-v3.2", body, false, null);
+  assert.equal(
+    result.conversationState.currentMessage.userInputMessage.modelId,
+    "deepseek-v3.2",
+    "non-Claude model ids are never touched by the Claude-only dash/dot logic"
   );
 });

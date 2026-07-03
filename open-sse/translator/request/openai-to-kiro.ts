@@ -585,15 +585,16 @@ export function buildKiroPayload(model, body, stream, credentials) {
     throw new Error(KIRO_UNSUPPORTED_CONTEXT_1M_MESSAGE);
   }
 
-  // Normalize model name: Claude Code sends dashes (claude-sonnet-4-6),
-  // Kiro API expects dots (claude-sonnet-4.6). Convert trailing version segment.
-  // The minor group is bounded to 1-2 digits so date-suffixed ids (e.g.
-  // claude-opus-4-20250514) are never mistaken for a dash-separated minor
-  // version and corrupted into claude-opus-4.20250514 (upstream 9router #2270).
-  const normalizedModel = model.replace(
-    /^(claude-(?:opus|sonnet|haiku|3-\d+)-\d+)-(\d{1,2})$/,
-    "$1.$2"
-  );
+  // Do NOT convert dashes to dots in the Claude model id. The Kiro/CodeWhisperer
+  // backend requires dash notation (claude-sonnet-4-5) and rejects dot notation
+  // with HTTP 400 INVALID_MODEL_ID (upstream 9router #2308). Claude Code already
+  // sends dashes, so no transform is needed here — this reverses the dash->dot
+  // conversion previously added for #5825 (which assumed the opposite and, based
+  // on live traffic, was the root cause of the INVALID_MODEL_ID 400s). Passing
+  // the model id through unchanged is also strictly safer than any regex-based
+  // transform: it can never corrupt a date-suffixed id (e.g.
+  // claude-opus-4-20250514), which was the concern #5825 was bounding against.
+  const normalizedModel = model;
   const messages = body.messages || [];
   let tools = body.tools || [];
   const maxTokens = body.max_tokens ?? body.max_completion_tokens ?? 32000;
