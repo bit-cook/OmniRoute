@@ -262,10 +262,10 @@ function getSystemId(credentials: ZedCredentials | null | undefined): string {
   );
 }
 
-async function fetchJson(url: string, options: RequestInit): Promise<any> {
+async function fetchJson(url: string, options: RequestInit) {
   const res = await fetch(url, options);
   const text = await res.text();
-  let data: any = null;
+  let data = null;
   if (text) {
     try {
       data = JSON.parse(text);
@@ -286,7 +286,7 @@ async function fetchJson(url: string, options: RequestInit): Promise<any> {
 export async function fetchZedAuthenticatedUser(
   credentials: ZedCredentials,
   options: { config?: ZedRequestConfig; signal?: AbortSignal | null } = {}
-): Promise<any> {
+) {
   const config = options.config || {};
   const headers: Record<string, string> = {
     Accept: "application/json",
@@ -315,7 +315,7 @@ function normalizeOrganizationId(value: unknown): string {
 
 export function resolveZedOrganizationId(
   credentials: ZedCredentials,
-  userInfo: any = null
+  userInfo = null
 ): string {
   const psd = credentials?.providerSpecificData || {};
   const explicit = normalizeOrganizationId(psd.organizationId || psd.defaultOrganizationId);
